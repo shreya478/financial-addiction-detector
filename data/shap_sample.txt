@@ -1,0 +1,21 @@
+--- SHAP Top-3 Features Sample ---
+User Sample 1 | Predicted State: 1
+  1. weekend_skew (Impact: -3.3915)
+  2. txn_count (Impact: +3.2461)
+  3. night_ratio (Impact: -2.4752)
+User Sample 2 | Predicted State: 1
+  1. txn_count (Impact: +0.0018)
+  2. weekend_skew (Impact: -0.0013)
+  3. night_ratio (Impact: -0.0007)
+User Sample 3 | Predicted State: 2
+  1. weekend_skew (Impact: +1.5074)
+  2. txn_count (Impact: -1.3756)
+  3. night_ratio (Impact: -0.1133)
+User Sample 4 | Predicted State: 0
+  1. weekend_skew (Impact: +2.5832)
+  2. txn_count (Impact: -2.4000)
+  3. amount_var (Impact: -0.3439)
+User Sample 5 | Predicted State: 1
+  1. weekend_skew (Impact: +0.3009)
+  2. txn_count (Impact: -0.2931)
+  3. night_ratio (Impact: -0.0197)
