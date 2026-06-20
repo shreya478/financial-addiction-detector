@@ -98,9 +98,11 @@ async def get_explanation(request: Request, user_id: int, current_user: dict = D
 @router.get("/platform-report")
 @limiter.limit("5/minute")
 async def platform_report(request: Request, current_user: dict = Depends(get_current_user)):
+    from models.dark_pattern_scorer import generate_report
+    df = generate_report()
     return {
         "status": "success",
-        "dark_pattern_metrics": "TODO: Dark pattern module not yet built. Requires integration with UI/UX telemetry."
+        "data": df.to_dict(orient="records")
     }
 
 @router.post("/alert/{user_id}")
