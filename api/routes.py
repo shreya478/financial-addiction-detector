@@ -122,38 +122,70 @@ async def real_time_predict(request: Request, payload: PredictPayload, current_u
     df = pd.DataFrame([t.dict() for t in payload.transactions])
     if df.empty:
         raise HTTPException(status_code=400, detail="No transactions provided")
-        
+
+    df['timestamp'] = pd.to_datetime(df['timestamp'])
+    df = df.sort_values('timestamp')
     txn_count = len(df)
-    amount_var = df['amount'].var() if txn_count > 1 else 0.0
-    weekend_sum = df['timestamp'].dt.dayofweek.isin([5, 6]).sum()
-    night_sum = df['timestamp'].dt.hour.between(0, 5).sum()
-    is_deposit_sum = (df['transaction_type'] == 'deposit').sum()
-    is_bet_sum = (df['transaction_type'] == 'bet').sum()
-    
-    weekend_skew = weekend_sum / txn_count
-    night_ratio = night_sum / txn_count
-    income_spend = is_deposit_sum / (is_bet_sum + 1e-5)
-    
-    feat_dict = {
-        'txn_count': txn_count,
+
+    time_span = (df['timestamp'].max() - df['timestamp'].min()).days
+    days_since_first = float(time_span if time_span > 0 else 1.0)
+
+    spending_velocity = float(df['amount'].sum() / days_since_first)
+    session_frequency = float(txn_count / days_since_first)
+    avg_transaction_amount = float(df['amount'].mean())
+    amount_var = float(df['amount'].var()) if txn_count > 1 else 0.0
+
+    night_ratio = float(df['timestamp'].dt.hour.between(0, 5).sum() / txn_count)
+    weekend_ratio = float(df['timestamp'].dt.dayofweek.isin([5, 6]).sum() / txn_count)
+    upi_ratio = float((df['type'].str.lower() == 'upi').sum() / txn_count)
+    trading_ratio = float((df['type'].str.lower() == 'trading').sum() / txn_count)
+
+    feat_dict = {f: 0.0 for f in cache.feature_names}
+    live_features = {
+        'spending_velocity': spending_velocity,
+        'session_frequency': session_frequency,
+        'avg_transaction_amount': avg_transaction_amount,
         'amount_var': amount_var,
-        'weekend_skew': weekend_skew,
-        'night_ratio': night_ratio,
-        'income_spend': income_spend
+        'night_session_ratio': night_ratio,
+        'weekend_ratio': weekend_ratio,
+        'upi_ratio': upi_ratio,
+        'trading_ratio': trading_ratio,
+        'days_since_first_transaction': days_since_first,
+        'total_transactions': float(txn_count)
     }
-    
+    feat_dict.update({k: v for k, v in live_features.items() if k in feat_dict})
+
     raw_vector = np.array([[feat_dict[f] for f in cache.feature_names]])
     scaled_vector = cache.scaler.transform(raw_vector)
     tensor_features = torch.tensor(scaled_vector, dtype=torch.float32)
-    
+
     with torch.no_grad():
         preds = cache.model(tensor_features)
+        probs = torch.softmax(preds, dim=1).squeeze().tolist()
         predicted_class = torch.argmax(preds, dim=1).item()
-        
+
+    # SHAP explanation
+    top_features = []
+    try:
+        shap_values = cache.explainer.shap_values(tensor_features)
+        if isinstance(shap_values, list):
+            sv = shap_values[predicted_class][0]
+        else:
+            sv = shap_values[0, :, predicted_class]
+        top_idx = np.argsort(np.abs(sv))[::-1][:3]
+        top_features = [
+            {"feature": cache.feature_names[i], "impact": round(float(sv[i]), 4)}
+            for i in top_idx
+        ]
+    except Exception:
+        pass
+
     state_names = {0: "Casual", 1: "Frequent", 2: "Compulsive", 3: "Crisis"}
     return {
         "user_id": payload.user_id,
-        "predicted_tier": predicted_class,
-        "predicted_state": state_names[predicted_class],
-        "message": "Real-time inference successful."
+        "user_risk_tier": predicted_class,
+        "label": state_names[predicted_class],
+        "probabilities": {state_names[i]: round(probs[i], 4) for i in range(4)},
+        "top_features": top_features,
+        "behavioral_state": state_names[predicted_class]
     }
